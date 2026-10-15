@@ -32,8 +32,8 @@ const PRODUCT_LINK = /\/products\/[a-z0-9-]+/g;
 
 /** Agent id each persona's assistant is reported under in conversation analytics. */
 const AGENT_IDS: Record<Persona, string> = {
-  shopper: "qYoUvIRmEpbwmljGvkMkCEPrbDw",
-  merchant: "bgDRE-DIBkzhrYlalmQHO9L7Uqg",
+  shopper: "X9MDc9ApX0MM6eyVmD6qzideUmk",
+  merchant: "1TNy521xXMt_yegd5uRbPVbpQZ0",
 };
 
 function localId(prefix: string): string {
