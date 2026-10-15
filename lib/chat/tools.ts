@@ -3,11 +3,23 @@ import { medianFulfillmentHours, topProducts } from "@/lib/admin/kpis";
 import { CATEGORY_META } from "@/lib/catalog";
 import { formatMoney } from "@/lib/commerce/cart";
 import { db } from "@/lib/db";
-import { CategorySchema, DifficultySchema, LightSchema, type Product } from "@/lib/db/schema";
+import {
+  CategorySchema,
+  DifficultySchema,
+  LightSchema,
+  type Persona,
+  type Product,
+} from "@/lib/db/schema";
+import { trackServerEvent, type TrackIdentity } from "@/lib/pendo.server";
 
 /** What a tool run has access to beyond its input. */
 export interface ToolContext {
   storeId?: string;
+  /** Who the assistant is answering. Catalog searches are reported for them when set. */
+  identity?: TrackIdentity;
+  persona?: Persona;
+  conversationId?: string;
+  provider?: "claude" | "scripted";
 }
 
 export const SearchCatalogInput = z.object({
@@ -63,8 +75,11 @@ async function summarize(products: Product[]): Promise<ProductSummary[]> {
   }));
 }
 
+/** `isFallback` marks the broad search a reply falls back to when the first one found nothing. */
 export async function searchCatalog(
   input: z.infer<typeof SearchCatalogInput>,
+  context: ToolContext = {},
+  { isFallback = false }: { isFallback?: boolean } = {},
 ): Promise<ProductSummary[]> {
   const products = (await db.products.list({ q: input.query, category: input.category })).filter(
     (product) =>
@@ -75,7 +90,26 @@ export async function searchCatalog(
       (!input.difficulty || product.care.difficulty === input.difficulty) &&
       (!input.maxPriceCents || product.price <= input.maxPriceCents),
   );
-  return summarize(products.slice(0, input.limit));
+  const results = await summarize(products.slice(0, input.limit));
+  if (context.identity) {
+    // What the shopper asked for, as searched, and whether the catalog had anything for it.
+    trackServerEvent("Assistant Catalog Searched", context.identity, {
+      persona: context.persona,
+      conversationId: context.conversationId,
+      provider: context.provider,
+      query: input.query?.slice(0, 100),
+      category: input.category,
+      light: input.light,
+      petSafe: input.petSafe,
+      difficulty: input.difficulty,
+      maxPriceCents: input.maxPriceCents,
+      plantsOnly: input.plantsOnly,
+      resultsCount: results.length,
+      hasResults: results.length > 0,
+      isFallback,
+    });
+  }
+  return results;
 }
 
 export async function getProduct(

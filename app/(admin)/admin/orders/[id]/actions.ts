@@ -119,6 +119,18 @@ export async function addOrderNote(
       },
     ],
   });
+  // The note is free text, so only its length is sent.
+  trackServerEvent("Order Note Added", sessionIdentity(found.merchant.session), {
+    orderId: found.order.id,
+    orderNumber: found.order.number,
+    storeId: found.order.storeId,
+    orderStatus: found.order.status,
+    noteLength: parsed.data.body.length,
+    noteCount: found.order.notes.length + 1,
+    hasRefundRequest: hasRefundRequest(found.order),
+    hoursSincePlaced: hoursSince(found.order.placedAt),
+    userRole: found.merchant.user.role,
+  });
   refresh(found.order.id);
   return { message: "Note added." };
 }

@@ -12,7 +12,8 @@ import { useChat } from "./use-chat";
 
 export function ChatPanel({ persona }: { persona: Persona }) {
   const { open, setOpen } = useAssistant();
-  const { messages, input, setInput, status, submit, rate, retry } = useChat(persona);
+  const { messages, input, setInput, status, submit, rate, retry, reportProductClick } =
+    useChat(persona);
   const copy = PERSONA_COPY[persona];
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +75,7 @@ export function ChatPanel({ persona }: { persona: Persona }) {
             streaming={status === "streaming" && index === messages.length - 1}
             onRate={rate}
             onRetry={retry}
+            onProductClick={reportProductClick}
           />
         ))}
       </div>

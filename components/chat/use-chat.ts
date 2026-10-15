@@ -27,6 +27,15 @@ interface SendOrigin {
   suggestionIndex?: number;
 }
 
+/** A product link the user followed from an assistant reply. */
+export interface ProductLinkClick {
+  messageId: string;
+  productSlug: string;
+  /** Where the link sits among the reply's product links, starting at 1. */
+  linkPosition: number;
+  linkCount: number;
+}
+
 /** Product links in a reply: the bare `/products/{slug}` paths the panel turns into links. */
 const PRODUCT_LINK = /\/products\/[a-z0-9-]+/g;
 
@@ -247,5 +256,22 @@ export function useChat(persona: Persona) {
     [messages, persona],
   );
 
-  return { messages, input, setInput, status, submit, rate, retry };
+  // Which recommendation was followed, and from which conversation and turn.
+  const reportProductClick = useCallback(
+    ({ messageId, productSlug, linkPosition, linkCount }: ProductLinkClick) => {
+      const index = messages.findIndex((message) => message.id === messageId);
+      pendo.track("Assistant Recommendation Clicked", {
+        persona,
+        conversationId: conversationId.current,
+        messageId,
+        productSlug,
+        linkPosition,
+        linkCount,
+        turnNumber: index === -1 ? undefined : turnNumber(messages.slice(0, index)),
+      });
+    },
+    [messages, persona],
+  );
+
+  return { messages, input, setInput, status, submit, rate, retry, reportProductClick };
 }

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney, unitPrice } from "@/lib/commerce/cart";
 import type { Product } from "@/lib/db/schema";
+import { pendo } from "@/lib/pendo";
 import type { CartActionState } from "../../cart/actions";
 
 const SAVED_KEY = "leafwright:saved";
@@ -45,19 +46,27 @@ function parseSaved(raw: string): string[] {
   }
 }
 
+/** Where a toggle left the list: whether the product is now saved, and how many are. */
+interface SavedChange {
+  saved: boolean;
+  savedCount: number;
+}
+
 /** Slugs saved for later live in this browser only. */
-function useSavedProducts(): [string[], (slug: string) => void] {
+function useSavedProducts(): [string[], (slug: string) => SavedChange | undefined] {
   const raw = useSyncExternalStore(subscribe, readRaw, () => "[]");
   const saved = parseSaved(raw);
-  const toggle = (slug: string) => {
+  const toggle = (slug: string): SavedChange | undefined => {
     const current = parseSaved(readRaw());
     const next = current.includes(slug) ? current.filter((s) => s !== slug) : [...current, slug];
     try {
       window.localStorage.setItem(SAVED_KEY, JSON.stringify(next));
     } catch {
       // Saving for later is a convenience; ignore storage failures.
+      return undefined;
     }
     listeners.forEach((listener) => listener());
+    return { saved: next.includes(slug), savedCount: next.length };
   };
   return [saved, toggle];
 }
@@ -76,6 +85,21 @@ export function PurchaseForm({
   const variant = product.variants.find((item) => item.id === variantId);
   const price = unitPrice(product, variant);
   const inStock = variant ? variant.inventory > 0 : product.inventory > 0;
+
+  function toggleSaveForLater() {
+    const change = toggleSaved(product.slug);
+    if (!change) return;
+    pendo.track("Product Saved for Later", {
+      action: change.saved ? "save" : "unsave",
+      productId: product.id,
+      productSlug: product.slug,
+      category: product.category,
+      storeId: product.storeId,
+      unitPrice: price,
+      inStock,
+      savedCount: change.savedCount,
+    });
+  }
 
   return (
     <form action={formAction} className="mt-6 space-y-4">
@@ -127,7 +151,7 @@ export function PurchaseForm({
           type="button"
           size="lg"
           variant="outline"
-          onClick={() => toggleSaved(product.slug)}
+          onClick={toggleSaveForLater}
           aria-pressed={saved}
           data-testid="pdp-save"
         >

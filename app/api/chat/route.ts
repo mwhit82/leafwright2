@@ -99,7 +99,13 @@ export async function POST(request: Request): Promise<Response> {
         for await (const chunk of provider.stream({
           persona,
           messages: conversation.messages.map(({ role, content }) => ({ role, content })),
-          context: { storeId },
+          context: {
+            storeId,
+            identity: sessionIdentity(session),
+            persona,
+            conversationId: conversation.id,
+            provider: provider.name,
+          },
           onIncomplete: reportFailure,
         })) {
           push(chunk);

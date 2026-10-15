@@ -62,14 +62,18 @@ function formatProducts(products: ProductSummary[]): string {
     .join("\n");
 }
 
-export async function scriptedShopperReply(message: string): Promise<string> {
+export async function scriptedShopperReply(
+  message: string,
+  context: ToolContext = {},
+): Promise<string> {
   const script = SHOPPER_SCRIPTS.find((candidate) => candidate.match.test(message));
   if (!script) {
-    const picks = await searchCatalog({ difficulty: "easy", plantsOnly: true, limit: 3 });
+    const picks = await searchCatalog({ difficulty: "easy", plantsOnly: true, limit: 3 }, context);
     return `Happy to help you choose. Tell me how much light you have, whether there are pets around, and roughly how much space. In the meantime, three plants almost everyone gets along with:\n\n${formatProducts(picks)}`;
   }
-  let products = await searchCatalog(script.search);
-  if (products.length === 0) products = await searchCatalog({ limit: 3 });
+  let products = await searchCatalog(script.search, context);
+  if (products.length === 0)
+    products = await searchCatalog({ limit: 3 }, context, { isFallback: true });
   return `${script.lead}\n\n${formatProducts(products)}\n\nWant me to narrow it down by pot size or price?`;
 }
 
@@ -117,7 +121,7 @@ export async function scriptedReply(
   message: string,
   context: ToolContext,
 ): Promise<string> {
-  if (persona === "shopper") return scriptedShopperReply(message);
+  if (persona === "shopper") return scriptedShopperReply(message, context);
   return scriptedMerchantReply(message, await summarizeStoreSales({ days: 30 }, context));
 }
 

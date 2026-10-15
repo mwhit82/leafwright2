@@ -222,4 +222,11 @@ export async function removePromo(): Promise<void> {
   const cart = await getCart();
   await saveCart({ ...cart, promoCode: undefined });
   revalidateCart();
+  if (!cart.promoCode) return;
+  // Priced with the code still on the cart, so this is what the shopper gave up.
+  const promo = await db.promos.getByCode(cart.promoCode);
+  trackServerEvent("Promo Removed", sessionIdentity(await auth()), {
+    code: cart.promoCode,
+    ...(promo ? await promoEffect(cart, promo) : {}),
+  });
 }
