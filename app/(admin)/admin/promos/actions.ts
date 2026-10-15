@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { auth } from "@/auth";
 import { currentMerchant } from "@/lib/auth/merchant";
 import { db } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { PromoTypeSchema, type Promo } from "@/lib/db/schema";
 import { fieldErrors, formValue } from "@/lib/orders/checkout";
+import type { TrackEventProperties } from "@/lib/pendo";
 import { sessionIdentity, trackServerEvent } from "@/lib/pendo.server";
 
 export interface PromoFormState {
@@ -43,7 +45,19 @@ export async function savePromo(
   formData: FormData,
 ): Promise<PromoFormState> {
   const merchant = await currentMerchant();
-  if (!merchant) return { error: "Sign in to a store to manage promos." };
+  const identity = sessionIdentity(merchant ? merchant.session : await auth());
+  // Field names only; never the values the merchant typed.
+  const saveFailed = (properties: TrackEventProperties) =>
+    trackServerEvent("Promo Save Failed", identity, {
+      ...properties,
+      isNew: !formValue(formData, "id"),
+      type: PromoTypeSchema.safeParse(formValue(formData, "type")).data,
+      storeId: merchant?.store.id,
+    });
+  if (!merchant) {
+    saveFailed({ reason: "signed_out" });
+    return { error: "Sign in to a store to manage promos." };
+  }
   const parsed = PromoInputSchema.safeParse({
     id: formValue(formData, "id") || undefined,
     code: formValue(formData, "code"),
@@ -53,15 +67,26 @@ export async function savePromo(
     endsAt: formValue(formData, "endsAt"),
     isActive: formData.get("isActive") === "on",
   });
-  if (!parsed.success)
-    return { error: "Check the highlighted fields.", fieldErrors: fieldErrors(parsed.error) };
+  if (!parsed.success) {
+    const errors = fieldErrors(parsed.error);
+    saveFailed({ reason: "validation_error", invalidFields: Object.keys(errors).join(",") });
+    return { error: "Check the highlighted fields.", fieldErrors: errors };
+  }
   const input = parsed.data;
 
   const existing = input.id ? await db.promos.getById(input.id) : undefined;
-  if (input.id && (!existing || existing.storeId !== merchant.store.id))
+  if (input.id && (!existing || existing.storeId !== merchant.store.id)) {
+    saveFailed({ reason: "not_in_store" });
     return { error: "That promo isn't in your store." };
+  }
   const clash = await db.promos.getByCode(input.code);
   if (clash && clash.id !== existing?.id) {
+    // Codes are unique across every nursery, so the clash may be with another store's promo.
+    saveFailed({
+      reason: "code_conflict",
+      invalidFields: "code",
+      conflictsWithOtherStore: clash.storeId !== merchant.store.id,
+    });
     return {
       error: "Check the highlighted fields.",
       fieldErrors: { code: "That code is already in use." },

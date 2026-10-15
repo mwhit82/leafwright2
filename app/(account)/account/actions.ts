@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { fieldErrors, formValue, SaveAddressSchema, saveAddress } from "@/lib/orders/checkout";
+import { sessionIdentity, trackServerEvent } from "@/lib/pendo.server";
 
 export interface AccountState {
   ok?: boolean;
@@ -27,9 +28,17 @@ export async function saveProfile(_prev: AccountState, formData: FormData): Prom
   });
   if (!parsed.success)
     return { error: "Check the highlighted fields.", fieldErrors: fieldErrors(parsed.error) };
-  await db.users.update(session.user.id, {
+  const previous = await db.users.getById(session.user.id);
+  const user = await db.users.update(session.user.id, {
     name: parsed.data.name,
     phone: parsed.data.phone || undefined,
+  });
+  // Which fields changed; never the name or phone number themselves.
+  trackServerEvent("Profile Updated", sessionIdentity(session), {
+    nameChanged: user.name !== previous?.name,
+    phoneChanged: user.phone !== previous?.phone,
+    hasPhone: Boolean(user.phone),
+    role: user.role,
   });
   revalidatePath("/account");
   revalidatePath("/", "layout");
@@ -62,6 +71,13 @@ export async function removeAddress(formData: FormData): Promise<void> {
   const address = await db.addresses.getById(id);
   if (!address || address.userId !== session.user.id) return;
   await db.addresses.remove(id);
+  // Removing the default promotes no other address. The label only; never the address lines.
+  const remaining = await db.addresses.listByUser(session.user.id);
+  trackServerEvent("Address Removed", sessionIdentity(session), {
+    wasDefault: address.isDefault,
+    label: address.label,
+    remainingAddressCount: remaining.length,
+  });
   revalidatePath("/account");
 }
 

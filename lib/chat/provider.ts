@@ -37,7 +37,7 @@ function buildTools(persona: Persona, context: ToolContext) {
         name: "search_catalog",
         description: TOOL_DESCRIPTIONS.search_catalog,
         inputSchema: SearchCatalogInput,
-        run: async (input) => JSON.stringify(await searchCatalog(input)),
+        run: async (input) => JSON.stringify(await searchCatalog(input, context)),
       }),
       eager_input_streaming: true,
     },

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { auth } from "@/auth";
 import { currentMerchant } from "@/lib/auth/merchant";
 import { CATEGORY_META } from "@/lib/catalog";
 import { daysSince, hoursSince } from "@/lib/dates";
@@ -30,6 +31,13 @@ interface SavedProduct {
   product: Product;
   previous?: Product;
   identity: TrackIdentity;
+}
+
+/** A rejected save: what the form shows, why it was turned down, and who tried. */
+interface RejectedProduct extends ProductFormState {
+  reason: "signed_out" | "validation_error" | "not_in_store" | "slug_conflict";
+  identity: TrackIdentity;
+  storeId?: string;
 }
 
 const dollars = z
@@ -79,17 +87,36 @@ function readForm(formData: FormData) {
 async function upsert(
   formData: FormData,
   publish: boolean,
-): Promise<ProductFormState | SavedProduct> {
+): Promise<RejectedProduct | SavedProduct> {
   const merchant = await currentMerchant();
-  if (!merchant) return { error: "Sign in to a store to manage products." };
+  if (!merchant) {
+    return {
+      error: "Sign in to a store to manage products.",
+      reason: "signed_out",
+      identity: sessionIdentity(await auth()),
+    };
+  }
+  const identity = sessionIdentity(merchant.session);
+  const storeId = merchant.store.id;
   const parsed = readForm(formData);
   if (!parsed.success)
-    return { error: "Check the highlighted fields.", fieldErrors: fieldErrors(parsed.error) };
+    return {
+      error: "Check the highlighted fields.",
+      fieldErrors: fieldErrors(parsed.error),
+      reason: "validation_error",
+      identity,
+      storeId,
+    };
   const input = parsed.data;
 
   const existing = input.id ? await db.products.getById(input.id) : undefined;
   if (input.id && (!existing || existing.storeId !== merchant.store.id)) {
-    return { error: "That product isn't in your store." };
+    return {
+      error: "That product isn't in your store.",
+      reason: "not_in_store",
+      identity,
+      storeId,
+    };
   }
 
   const slug = input.slug ?? existing?.slug ?? slugify(input.name);
@@ -98,6 +125,9 @@ async function upsert(
     return {
       error: "Check the highlighted fields.",
       fieldErrors: { slug: "Another product already uses this URL." },
+      reason: "slug_conflict",
+      identity,
+      storeId,
     };
   }
 
@@ -129,7 +159,25 @@ async function upsert(
   await (existing ? db.products.update(product.id, product) : db.products.create(product));
   revalidatePath("/admin/products");
   revalidatePath("/products");
-  return { product, previous: existing, identity: sessionIdentity(merchant.session) };
+  return { product, previous: existing, identity };
+}
+
+/** Reports why a save was turned down and hands the form only its messages. */
+function rejectSave(
+  rejected: RejectedProduct,
+  formData: FormData,
+  action: "save" | "publish",
+): ProductFormState {
+  // Field names only; never the values the merchant typed.
+  trackServerEvent("Product Save Failed", rejected.identity, {
+    action,
+    reason: rejected.reason,
+    invalidFields: rejected.fieldErrors ? Object.keys(rejected.fieldErrors).join(",") : undefined,
+    isNew: !formValue(formData, "id"),
+    category: CategorySchema.safeParse(formValue(formData, "category")).data,
+    storeId: rejected.storeId,
+  });
+  return { error: rejected.error, fieldErrors: rejected.fieldErrors };
 }
 
 /** Creates or updates the product without changing a published product's status. */
@@ -138,7 +186,7 @@ export async function saveProduct(
   formData: FormData,
 ): Promise<ProductFormState> {
   const result = await upsert(formData, false);
-  if (!("product" in result)) return result;
+  if (!("product" in result)) return rejectSave(result, formData, "save");
   const { product, previous } = result;
   trackServerEvent("Product Saved", result.identity, {
     productId: product.id,
@@ -165,7 +213,7 @@ export async function publishProduct(
   formData: FormData,
 ): Promise<ProductFormState> {
   const result = await upsert(formData, true);
-  if (!("product" in result)) return result;
+  if (!("product" in result)) return rejectSave(result, formData, "publish");
   const { product, previous } = result;
   trackServerEvent("Product Published", result.identity, {
     productId: product.id,

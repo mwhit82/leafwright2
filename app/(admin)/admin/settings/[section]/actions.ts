@@ -43,6 +43,16 @@ export async function updateStore(
   if (!parsed.success)
     return { error: "Check the highlighted fields.", fieldErrors: fieldErrors(parsed.error) };
   await db.stores.update(merchant.store.id, parsed.data);
+  // What changed and how long the description is; never the text itself.
+  trackServerEvent("Store Details Updated", sessionIdentity(merchant.session), {
+    storeId: merchant.store.id,
+    nameChanged: parsed.data.name !== merchant.store.name,
+    regionChanged: parsed.data.region !== merchant.store.region,
+    descriptionChanged: parsed.data.description !== merchant.store.description,
+    descriptionLength: parsed.data.description.length,
+    storePlan: merchant.store.plan,
+    userRole: merchant.user.role,
+  });
   refresh();
   return { message: "Store details saved." };
 }

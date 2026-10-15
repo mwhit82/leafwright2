@@ -4,20 +4,31 @@ import { RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { UiMessage } from "./use-chat";
+import type { ProductLinkClick, UiMessage } from "./use-chat";
 
-/** Turns bare `/products/{slug}` paths into links. */
-function renderContent(content: string) {
+const PRODUCT_PATH = /^\/products\/[a-z0-9-]+$/;
+
+/** Turns bare `/products/{slug}` paths into links; `onFollow` hears which one was clicked. */
+function renderContent(
+  content: string,
+  onFollow?: (link: Omit<ProductLinkClick, "messageId">) => void,
+) {
   const parts = content.split(/(\/products\/[a-z0-9-]+)/g);
-  return parts.map((part, index) =>
-    /^\/products\/[a-z0-9-]+$/.test(part) ? (
-      <Link key={index} href={part} className="underline">
+  const linkCount = parts.filter((part) => PRODUCT_PATH.test(part)).length;
+  let linkPosition = 0;
+  return parts.map((part, index) => {
+    if (!PRODUCT_PATH.test(part)) return <span key={index}>{part}</span>;
+    const link = {
+      productSlug: part.slice("/products/".length),
+      linkPosition: ++linkPosition,
+      linkCount,
+    };
+    return (
+      <Link key={index} href={part} className="underline" onClick={() => onFollow?.(link)}>
         {part}
       </Link>
-    ) : (
-      <span key={index}>{part}</span>
-    ),
-  );
+    );
+  });
 }
 
 export function ChatMessageBubble({
@@ -25,11 +36,13 @@ export function ChatMessageBubble({
   streaming,
   onRate,
   onRetry,
+  onProductClick,
 }: {
   message: UiMessage;
   streaming: boolean;
   onRate: (id: string, value: "up" | "down") => void;
   onRetry: (id: string) => void;
+  onProductClick: (click: ProductLinkClick) => void;
 }) {
   const isUser = message.role === "user";
   return (
@@ -44,7 +57,10 @@ export function ChatMessageBubble({
         )}
       >
         {message.content ? (
-          renderContent(message.content)
+          renderContent(
+            message.content,
+            isUser ? undefined : (link) => onProductClick({ messageId: message.id, ...link }),
+          )
         ) : (
           <span className="text-muted-foreground">…</span>
         )}

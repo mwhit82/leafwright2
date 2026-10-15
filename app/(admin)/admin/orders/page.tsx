@@ -18,6 +18,7 @@ import { formatMoney } from "@/lib/commerce/cart";
 import { db, OrderStatusSchema } from "@/lib/db";
 import { StatusFilter } from "../products/status-filter";
 import { DateRangeFilter } from "./date-range";
+import { ReportOrderFilters } from "./report-order-filters";
 
 export const metadata: Metadata = { title: "Orders" };
 
@@ -37,6 +38,7 @@ export default async function AdminOrdersPage({ searchParams }: PageProps<"/admi
 
   return (
     <>
+      <ReportOrderFilters {...filters} storeId={store.id} resultsCount={orders.length} />
       <PageHeader
         title="Orders"
         description={`${orders.length} order${orders.length === 1 ? "" : "s"}`}
