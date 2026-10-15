@@ -33,7 +33,7 @@ const ANALYTICS_AGENT_SNIPPET = `(function(apiKey){
     o[m]=o[m]||function(){o._q[m===v[0]?'unshift':'push']([m].concat([].slice.call(arguments,0)));};})(v[w]);
     y=e.createElement(n);y.async=!0;y.src='https://cdn.pendo-dev.pendo-dev.com/agent/static/'+apiKey+'/pendo.js';
     z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);})(window,document,'script','pendo');
-})('9d0f48b4-bcda-43a6-95c8-af3e93f2169a');
+})('164dad18-496f-421d-a4b4-6487963e35ed');
 pendo.initialize({ visitor: { id: '' } });`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
